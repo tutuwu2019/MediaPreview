@@ -1,0 +1,109 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake Configure Debug (MSVC)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "msvc-debug"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Build Debug (MSVC)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "build-msvc-debug"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "CMake Configure Debug (MSVC)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Configure Release (MSVC)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "msvc-release"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Build Release (MSVC)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "build-msvc-release"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "CMake Configure Release (MSVC)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Configure Debug (MinGW)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "mingw-debug"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Build Debug (MinGW)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "build-mingw-debug"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "CMake Configure Debug (MinGW)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Configure Release (MinGW)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--preset",
+        "mingw-release"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Build Release (MinGW)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "--preset",
+        "build-mingw-release"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "CMake Configure Release (MinGW)"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

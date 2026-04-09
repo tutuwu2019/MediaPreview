@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug MediaPreviewClient (Debug)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/msvc-debug/MediaPreviewClient.exe",
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "${env:QT_ROOT}/bin;${env:PATH}"
+        },
+        {
+          "name": "QT_PLUGIN_PATH",
+          "value": "${env:QT_ROOT}/plugins"
+        }
+      ],
+      "preLaunchTask": "CMake Build Debug (MSVC)"
+    },
+    {
+      "name": "Debug MediaPreviewClient (Release)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/msvc-release/MediaPreviewClient.exe",
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "${env:QT_ROOT}/bin;${env:PATH}"
+        },
+        {
+          "name": "QT_PLUGIN_PATH",
+          "value": "${env:QT_ROOT}/plugins"
+        }
+      ],
+      "preLaunchTask": "CMake Build Release (MSVC)"
+    },
+    {
+      "name": "Debug MediaPreviewClient (MinGW Debug)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/mingw-debug/MediaPreviewClient.exe",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "${env:MINGW_ROOT}/bin/gdb.exe",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "${env:MINGW_ROOT}/bin;${env:QT_ROOT}/bin;${env:PATH}"
+        },
+        {
+          "name": "QT_PLUGIN_PATH",
+          "value": "${env:QT_ROOT}/plugins"
+        }
+      ],
+      "preLaunchTask": "CMake Build Debug (MinGW)"
+    }
+  ]
+}

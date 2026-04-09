@@ -1,0 +1,33 @@
+# Build outputs
+build/
+cmake-build-*/
+out/
+bin/
+obj/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Qt generated
+*.pro.user
+*.qmake.stash
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Logs and runtime artifacts
+*.log
+preview.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*.log
+
+# Temporary
+*.tmp
+*.temp
