@@ -22,6 +22,8 @@
 #include <QVideoWidget>
 #include <QSignalBlocker>
 #include <QScrollBar>
+#include <QFrame>
+#include <QSizePolicy>
 
 /**
  * UI setup and signal-slot connections are organized in this file to keep mainwindow.cpp focused on core logic and media handling.
@@ -29,36 +31,72 @@
 void MainWindow::setupUi()
 {
     // 工具栏和菜单
-    auto *toolbar = addToolBar("Main");
-    toolbar->setMovable(false);
+    m_mainToolBar = addToolBar("Main");
+    m_mainToolBar->setMovable(false);
 
-    m_openFilesAction = toolbar->addAction("打开文件");
-    m_toggleListAction = toolbar->addAction("显示浏览记录");
+    m_openFilesAction = m_mainToolBar->addAction("打开文件");
+    m_toggleListAction = m_mainToolBar->addAction("显示浏览记录");
     m_toggleListAction->setCheckable(true);
     m_toggleListAction->setChecked(false);
-    toolbar->addSeparator();
+    m_mainToolBar->addSeparator();
 
-    m_prevAction = toolbar->addAction("上一项");
-    m_nextAction = toolbar->addAction("下一项");
-    m_playPauseAction = toolbar->addAction("播放/暂停");
-    toolbar->addSeparator();
+    m_prevAction = m_mainToolBar->addAction("上一项");
+    m_nextAction = m_mainToolBar->addAction("下一项");
+    m_playPauseAction = m_mainToolBar->addAction("播放/暂停");
+    m_mainToolBar->addSeparator();
 
-    m_fitAction = toolbar->addAction("适应窗口");
-    m_actualSizeAction = toolbar->addAction("原始尺寸");
-    m_zoomInAction = toolbar->addAction("放大");
-    m_zoomOutAction = toolbar->addAction("缩小");
-    toolbar->addSeparator();
+    m_fitAction = m_mainToolBar->addAction("适应窗口");
+    m_actualSizeAction = m_mainToolBar->addAction("原始尺寸");
+    m_zoomInAction = m_mainToolBar->addAction("放大");
+    m_zoomOutAction = m_mainToolBar->addAction("缩小");
+    m_mainToolBar->addSeparator();
 
-    m_livpPreferVideoAction = toolbar->addAction("LIVP优先视频");
+    m_livpPreferVideoAction = m_mainToolBar->addAction("动态图优先视频");
     m_livpPreferVideoAction->setCheckable(true);
     m_livpPreferVideoAction->setChecked(m_livpPreferVideo);
+
+    m_toggleAlbumAction = m_mainToolBar->addAction("显示相册画板");
+    m_toggleAlbumAction->setCheckable(true);
+    m_toggleAlbumAction->setChecked(true);
+    m_toggleAlbumAction->setText("隐藏相册画板");
 
     auto *fileMenu = menuBar()->addMenu("菜单栏");
     fileMenu->addAction(m_openFilesAction);
 
-    // 中央分割器，左侧文件列表，右侧预览区和底部相册画板
-    m_mainSplitter = new QSplitter(this);
-    setCentralWidget(m_mainSplitter);
+    // 中央区域：顶部信息栏 + 下方主分割器
+    auto *central = new QWidget(this);
+    auto *centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(6, 4, 6, 6);
+    centralLayout->setSpacing(6);
+
+    auto *infoFrame = new QFrame(central);
+    infoFrame->setObjectName("mediaInfoFrame");
+    infoFrame->setStyleSheet(
+        "QFrame#mediaInfoFrame {"
+        "  background: rgba(240, 247, 255, 235);"
+        "  border: 1px solid #D5E4FA;"
+        "  border-radius: 6px;"
+        "}"
+    );
+    auto *infoLayout = new QHBoxLayout(infoFrame);
+    infoLayout->setContentsMargins(8, 3, 8, 3);
+    infoLayout->setSpacing(4);
+
+    m_mediaInfoLabel = new QLabel("图片名称 | 0/0 个文件 | 100% | 0x0 | 0 B | 未知 | 文件信息", infoFrame);
+    m_mediaInfoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_mediaInfoLabel->setMinimumWidth(0);
+    m_mediaInfoLabel->setStyleSheet(
+        "QLabel {"
+        "  color: #3A4B61;"
+        "  font-size: 12px;"
+        "}"
+    );
+    infoLayout->addWidget(m_mediaInfoLabel);
+    centralLayout->addWidget(infoFrame);
+
+    m_mainSplitter = new QSplitter(central);
+    centralLayout->addWidget(m_mainSplitter, 1);
+    setCentralWidget(central);
 
     // 主预览区，包含图片和视频两种显示模式
     // 左侧文件列表，初始隐藏
@@ -162,12 +200,14 @@ void MainWindow::setupUi()
     m_imageLabel->setAlignment(Qt::AlignCenter);
     m_imageLabel->setText("请选择图片或视频文件");
     m_imageLabel->setMinimumSize(400, 300);
+    m_imageLabel->installEventFilter(this);
 
     // 视频显示区域，包含视频窗口和控制面板
     m_imageArea = new QScrollArea;
     m_imageArea->setWidgetResizable(true);
     m_imageArea->setAlignment(Qt::AlignCenter);
     m_imageArea->setWidget(m_imageLabel);
+    m_imageArea->viewport()->installEventFilter(this);
 
     // 视频面板在下面单独构建，包含视频窗口和控制按钮
     m_videoPanel = new QWidget;
@@ -177,6 +217,7 @@ void MainWindow::setupUi()
 
     m_videoWidget = new QVideoWidget;
     videoLayout->addWidget(m_videoWidget, 1);
+    m_videoWidget->installEventFilter(this);
 
     // 视频控制按钮布局，包括播放/暂停、进度条、时间显示和音量控制
     auto *controlsLayout = new QHBoxLayout;
@@ -369,6 +410,7 @@ void MainWindow::setupUi()
         statusBar()->showMessage("视频启动超时，已回退静态图", 4000);
     });
 
+    updateMediaInfoBar();
     statusBar()->showMessage("就绪");
 }
 
@@ -398,6 +440,13 @@ void MainWindow::setupConnections()
     connect(m_actualSizeAction, &QAction::triggered, this, &MainWindow::setActualSizeMode);
     connect(m_zoomInAction, &QAction::triggered, this, &MainWindow::zoomInImage);
     connect(m_zoomOutAction, &QAction::triggered, this, &MainWindow::zoomOutImage);
+    connect(m_toggleAlbumAction, &QAction::toggled, this, [this](bool checked) {
+        m_showAlbumPanel = checked;
+        if (m_albumListWidget) {
+            m_albumListWidget->setVisible(checked);
+        }
+        m_toggleAlbumAction->setText(checked ? "隐藏相册画板" : "显示相册画板");
+    });
     connect(m_livpPreferVideoAction, &QAction::toggled, this,
             [this](bool checked) {
                 m_livpPreferVideo = checked;

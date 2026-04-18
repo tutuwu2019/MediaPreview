@@ -408,7 +408,16 @@ cmake --build --preset build-mingw-debug -j 8
 
 ---
 
-## 11. 结论
+### 11. 部署
+
+#### 部署遇到的问题
+```text
+在实际发布部署的时候，测试发现会出现错误：找不到Qt6Multimedia.dll、找不到Qt6Core.dill、找不到Qt6Gui.dll、找不到Qt6MultimediaWidgets.dll
+```
+
+其实这些是典型的QT 运行库未随程序一起部署的问题。
+
+## 12. 结论
 
 当前版本已形成“可维护、可排障、可扩展”的结构化实现：
 

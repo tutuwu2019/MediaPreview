@@ -3,9 +3,11 @@
 #include <QDropEvent>
 #include <QDragEnterEvent>
 #include <QDateTime>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QLabel>
 #include <QDir>
 #include <QDirIterator>
 #include <QKeyEvent>
@@ -14,6 +16,7 @@
 #include <QMediaPlayer>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QAudioOutput>
 #include <QAbstractItemView>
 #include <QAbstractItemModel>
@@ -26,14 +29,110 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolBar>
 #include <QUrl>
 #include <QWheelEvent>
+#include <QVideoWidget>
+#include <QMenu>
+#include <QActionGroup>
+#include <QRandomGenerator>
+#include <algorithm>
 
 namespace {
 constexpr int kHistoryRolePath = Qt::UserRole + 1;
 constexpr int kHistoryRoleIsHeader = Qt::UserRole + 2;
 constexpr int kHistoryRoleGroupId = Qt::UserRole + 3;
 constexpr int kHistoryGroupSize = 50;
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (m_videoWidget && watched == static_cast<QObject *>(m_videoWidget) && event->type() == QEvent::MouseButtonPress) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        if (mouseEvent->button() == Qt::RightButton) {
+            showPreviewContextMenu(mouseEvent->globalPosition().toPoint());
+            return true;
+        }
+    }
+
+    if (m_imageArea && (watched == m_imageArea->viewport() || watched == static_cast<QObject *>(m_imageLabel))) {
+        const bool inImageMode = (m_previewStack && m_previewStack->currentWidget() == m_imageArea);
+        const bool hasImage = !m_currentPixmap.isNull() || (m_currentMovie != nullptr);
+
+        if (!inImageMode || !hasImage) {
+            return QMainWindow::eventFilter(watched, event);
+        }
+
+        if (event->type() == QEvent::Wheel) {
+            auto *wheelEvent = static_cast<QWheelEvent *>(event);
+            if (wheelEvent->angleDelta().y() > 0) {
+                zoomInImage();
+            } else if (wheelEvent->angleDelta().y() < 0) {
+                zoomOutImage();
+            }
+            return true;
+        }
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::RightButton) {
+                showPreviewContextMenu(mouseEvent->globalPosition().toPoint());
+                return true;
+            }
+            if (mouseEvent->button() == Qt::LeftButton) {
+                QScrollBar *hBar = m_imageArea->horizontalScrollBar();
+                QScrollBar *vBar = m_imageArea->verticalScrollBar();
+                const bool canPan = hBar && vBar
+                    && (hBar->maximum() > hBar->minimum() || vBar->maximum() > vBar->minimum());
+                if (canPan) {
+                    m_isImagePanning = true;
+                    m_lastImagePanPos = mouseEvent->globalPosition().toPoint();
+                    m_imageArea->viewport()->setCursor(Qt::ClosedHandCursor);
+                    m_imageArea->viewport()->grabMouse();
+                    if (m_imageLabel) {
+                        m_imageLabel->setCursor(Qt::ClosedHandCursor);
+                    }
+                    return true;
+                }
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            if (m_isImagePanning) {
+                auto *mouseEvent = static_cast<QMouseEvent *>(event);
+                if (!(mouseEvent->buttons() & Qt::LeftButton)) {
+                    m_isImagePanning = false;
+                    m_imageArea->viewport()->unsetCursor();
+                    m_imageArea->viewport()->releaseMouse();
+                    if (m_imageLabel) {
+                        m_imageLabel->unsetCursor();
+                    }
+                    return true;
+                }
+                QScrollBar *hBar = m_imageArea->horizontalScrollBar();
+                QScrollBar *vBar = m_imageArea->verticalScrollBar();
+                if (hBar && vBar) {
+                    const QPoint now = mouseEvent->globalPosition().toPoint();
+                    const QPoint delta = now - m_lastImagePanPos;
+                    hBar->setValue(hBar->value() - delta.x());
+                    vBar->setValue(vBar->value() - delta.y());
+                    m_lastImagePanPos = now;
+                    return true;
+                }
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            if (mouseEvent->button() == Qt::LeftButton && m_isImagePanning) {
+                m_isImagePanning = false;
+                m_imageArea->viewport()->unsetCursor();
+                m_imageArea->viewport()->releaseMouse();
+                if (m_imageLabel) {
+                    m_imageLabel->unsetCursor();
+                }
+                return true;
+            }
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
@@ -49,25 +148,47 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         return;
     }
 
+    const bool inVideoMode = (m_previewStack && m_previewStack->currentWidget() == m_videoPanel);
+
     switch (event->key()) {
     case Qt::Key_Space:
         togglePlayPause();
         event->accept();
         return;
     case Qt::Key_Left:
-        seekByMs(-5000);
+        if (inVideoMode) {
+            seekByMs(-5000);
+        } else {
+            showPrev();
+        }
         event->accept();
         return;
     case Qt::Key_Right:
-        seekByMs(5000);
+        if (inVideoMode) {
+            seekByMs(5000);
+        } else {
+            showNext();
+        }
         event->accept();
         return;
     case Qt::Key_Up:
-        showPrev();
+        if (inVideoMode && m_volumeSlider) {
+            const int next = qMin(100, m_volumeSlider->value() + 5);
+            m_volumeSlider->setValue(next);
+            statusBar()->showMessage(QString("音量: %1%").arg(next), 1200);
+        } else {
+            showPrev();
+        }
         event->accept();
         return;
     case Qt::Key_Down:
-        showNext();
+        if (inVideoMode && m_volumeSlider) {
+            const int next = qMax(0, m_volumeSlider->value() - 5);
+            m_volumeSlider->setValue(next);
+            statusBar()->showMessage(QString("音量: %1%").arg(next), 1200);
+        } else {
+            showNext();
+        }
         event->accept();
         return;
     default:
@@ -83,7 +204,8 @@ void MainWindow::wheelEvent(QWheelEvent *event)
         return;
     }
 
-    if (m_previewStack->currentWidget() == m_imageArea && !m_currentPixmap.isNull()) {
+    const bool hasImage = !m_currentPixmap.isNull() || (m_currentMovie != nullptr);
+    if (m_previewStack->currentWidget() == m_imageArea && hasImage) {
         const QPoint localPos = event->position().toPoint();
         const QRect imageRect = QRect(m_imageArea->mapTo(this, QPoint(0, 0)), m_imageArea->size());
         if (imageRect.contains(localPos)) {
@@ -98,6 +220,73 @@ void MainWindow::wheelEvent(QWheelEvent *event)
     }
 
     QMainWindow::wheelEvent(event);
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event)
+{
+    if (!event) {
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton && m_previewStack
+        && m_previewStack->currentWidget() == m_imageArea && m_imageArea) {
+        const bool hasImage = !m_currentPixmap.isNull() || (m_currentMovie != nullptr);
+        const QRect imageRect = QRect(m_imageArea->mapTo(this, QPoint(0, 0)), m_imageArea->size());
+        if (hasImage && imageRect.contains(event->position().toPoint())) {
+            QScrollBar *hBar = m_imageArea->horizontalScrollBar();
+            QScrollBar *vBar = m_imageArea->verticalScrollBar();
+            const bool canPan = hBar && vBar && (hBar->maximum() > hBar->minimum() || vBar->maximum() > vBar->minimum());
+            if (canPan) {
+                m_isImagePanning = true;
+                m_lastImagePanPos = event->pos();
+                m_imageArea->viewport()->setCursor(Qt::ClosedHandCursor);
+                event->accept();
+                return;
+            }
+        }
+    }
+
+    QMainWindow::mousePressEvent(event);
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!event) {
+        return;
+    }
+
+    if (m_isImagePanning && m_imageArea) {
+        QScrollBar *hBar = m_imageArea->horizontalScrollBar();
+        QScrollBar *vBar = m_imageArea->verticalScrollBar();
+        if (hBar && vBar) {
+            const QPoint delta = event->pos() - m_lastImagePanPos;
+            hBar->setValue(hBar->value() - delta.x());
+            vBar->setValue(vBar->value() - delta.y());
+            m_lastImagePanPos = event->pos();
+            event->accept();
+            return;
+        }
+    }
+
+    QMainWindow::mouseMoveEvent(event);
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (!event) {
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton && m_isImagePanning) {
+        m_isImagePanning = false;
+        if (m_imageArea && m_imageArea->viewport()) {
+            m_imageArea->viewport()->unsetCursor();
+        }
+        event->accept();
+        return;
+    }
+
+    QMainWindow::mouseReleaseEvent(event);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -125,11 +314,21 @@ void MainWindow::dropEvent(QDropEvent *event)
         return;
     }
 
+    QString firstSupportedFile;
+    for (const QString &path : paths) {
+        QFileInfo info(path);
+        if (info.isFile() && isSupportedPath(path)) {
+            firstSupportedFile = info.absoluteFilePath();
+            break;
+        }
+    }
+
     if (paths.size() == 1 && QFileInfo(paths.front()).isDir()) {
         loadPaths(collectFilesFromFolder(paths.front()), true);
+    } else if (!firstSupportedFile.isEmpty()) {
+        loadPaths(collectFilesFromSameFolder(firstSupportedFile), true, firstSupportedFile);
     } else {
-        const QString firstFile = paths.front();
-        loadPaths(collectFilesFromSameFolder(firstFile), true, firstFile);
+        statusBar()->showMessage("拖拽项中未找到可播放的图片/视频文件", 2500);
     }
 }
 
@@ -243,7 +442,7 @@ void MainWindow::onAlbumSelectionChanged()
     logLine("Album selected row=" + QString::number(row) + ", file=" + m_files.at(row));
     showCurrent();
     QTimer::singleShot(0, this, [this, row]() {
-        centerAlbumSelection(row);
+        centerAlbumSelection(row);      
         QTimer::singleShot(0, this, [this, row]() {
             ensureAlbumIconsNear(row);
         });
@@ -319,7 +518,7 @@ void MainWindow::loadPaths(const QStringList &paths, bool clearExisting, const Q
 
     for (const QString &path : paths) {
         QFileInfo info(path);
-        if (info.isDir()) {
+        if (info.isDir() || !isSupportedPath(path)) {
             continue;
         }
         filtered << info.absoluteFilePath();
@@ -335,6 +534,8 @@ void MainWindow::loadPaths(const QStringList &paths, bool clearExisting, const Q
      *  更新文件列表和界面项目，如果 clearExisting 为 true 则替换现有列表，否则追加到现有列表后面
      */
     if (clearExisting) {
+        cancelImageLoad();
+        cancelAllAlbumThumbWatchers();
         m_files = filtered;
         m_albumIconCache.clear();
         m_heicTranscodeCache.clear();
@@ -348,7 +549,9 @@ void MainWindow::loadPaths(const QStringList &paths, bool clearExisting, const Q
         m_files.append(filtered);
     }
 
-    for (const QString &file : filtered) {
+    applyAlbumSort(false);
+
+    for (const QString &file : m_files) {
         QFileInfo info(file);
         if (m_albumListWidget) {
             auto *albumItem = new QListWidgetItem(buildListIcon(file), info.fileName());
@@ -449,6 +652,210 @@ QStringList MainWindow::collectFilesFromSameFolder(const QString &filePath) cons
     return files;
 }
 
+QString MainWindow::albumSortLabel() const
+{
+    QString key;
+    switch (m_albumSortKey) {
+    case AlbumSortKey::FileName:
+        key = "文件名";
+        break;
+    case AlbumSortKey::Random:
+        key = "随机";
+        break;
+    case AlbumSortKey::FileSize:
+        key = "文件大小";
+        break;
+    case AlbumSortKey::Extension:
+        key = "扩展名";
+        break;
+    case AlbumSortKey::CreatedDate:
+        key = "创建日期";
+        break;
+    case AlbumSortKey::AccessedDate:
+        key = "访问日期";
+        break;
+    case AlbumSortKey::ModifiedDate:
+        key = "修改日期";
+        break;
+    }
+    return key + (m_albumSortOrder == Qt::AscendingOrder ? " 升序" : " 降序");
+}
+
+void MainWindow::applyAlbumSort(bool reshuffleRandom)
+{
+    if (m_files.isEmpty()) {
+        return;
+    }
+
+    if (m_albumSortKey == AlbumSortKey::Random && reshuffleRandom) {
+        for (int i = m_files.size() - 1; i > 0; --i) {
+            const int j = QRandomGenerator::global()->bounded(i + 1);
+            m_files.swapItemsAt(i, j);
+        }
+        if (m_albumSortOrder == Qt::DescendingOrder) {
+            std::reverse(m_files.begin(), m_files.end());
+        }
+        return;
+    }
+
+    auto keyFor = [this](const QString &path) {
+        const QFileInfo info(path);
+        switch (m_albumSortKey) {
+        case AlbumSortKey::FileName:
+            return info.fileName().toLower();
+        case AlbumSortKey::Random:
+            return info.fileName().toLower();
+        case AlbumSortKey::FileSize:
+            return QString::number(info.size()).rightJustified(20, '0');
+        case AlbumSortKey::Extension:
+            return info.suffix().toLower() + "|" + info.fileName().toLower();
+        case AlbumSortKey::CreatedDate:
+            return info.birthTime().toString(Qt::ISODateWithMs);
+        case AlbumSortKey::AccessedDate:
+            return info.lastRead().toString(Qt::ISODateWithMs);
+        case AlbumSortKey::ModifiedDate:
+            return info.lastModified().toString(Qt::ISODateWithMs);
+        }
+        return info.fileName().toLower();
+    };
+
+    std::sort(m_files.begin(), m_files.end(), [this, &keyFor](const QString &a, const QString &b) {
+        const QString ka = keyFor(a);
+        const QString kb = keyFor(b);
+        int cmp = QString::compare(ka, kb, Qt::CaseInsensitive);
+        if (cmp == 0) {
+            cmp = QString::compare(QFileInfo(a).fileName(), QFileInfo(b).fileName(), Qt::CaseInsensitive);
+        }
+        if (m_albumSortOrder == Qt::DescendingOrder) {
+            cmp = -cmp;
+        }
+        return cmp < 0;
+    });
+}
+
+void MainWindow::showPreviewContextMenu(const QPoint &globalPos)
+{
+    QMenu menu(this);
+
+    QAction *toggleToolbar = menu.addAction("显示工具栏");
+    toggleToolbar->setCheckable(true);
+    toggleToolbar->setChecked(m_mainToolBar ? m_mainToolBar->isVisible() : true);
+
+    QAction *toggleAlbum = menu.addAction("显示相册画板");
+    toggleAlbum->setCheckable(true);
+    toggleAlbum->setChecked(m_showAlbumPanel);
+
+    menu.addSeparator();
+    QMenu *sortMenu = menu.addMenu("相册画板加载顺序");
+    QActionGroup *sortGroup = new QActionGroup(sortMenu);
+    sortGroup->setExclusive(true);
+
+    auto addSortAction = [sortMenu, sortGroup, this](const QString &text, AlbumSortKey key) {
+        QAction *a = sortMenu->addAction(text);
+        a->setCheckable(true);
+        a->setData(static_cast<int>(key));
+        a->setChecked(m_albumSortKey == key);
+        sortGroup->addAction(a);
+        return a;
+    };
+
+    addSortAction("文件名", AlbumSortKey::FileName);
+    addSortAction("随机", AlbumSortKey::Random);
+    addSortAction("文件大小", AlbumSortKey::FileSize);
+    addSortAction("扩展名", AlbumSortKey::Extension);
+    addSortAction("创建日期", AlbumSortKey::CreatedDate);
+    addSortAction("访问日期", AlbumSortKey::AccessedDate);
+    addSortAction("修改日期", AlbumSortKey::ModifiedDate);
+
+    sortMenu->addSeparator();
+    QActionGroup *orderGroup = new QActionGroup(sortMenu);
+    orderGroup->setExclusive(true);
+    QAction *ascAction = sortMenu->addAction("升序");
+    ascAction->setCheckable(true);
+    ascAction->setChecked(m_albumSortOrder == Qt::AscendingOrder);
+    orderGroup->addAction(ascAction);
+    QAction *descAction = sortMenu->addAction("降序");
+    descAction->setCheckable(true);
+    descAction->setChecked(m_albumSortOrder == Qt::DescendingOrder);
+    orderGroup->addAction(descAction);
+
+    QAction *picked = menu.exec(globalPos);
+    if (!picked) {
+        return;
+    }
+
+    if (picked == toggleToolbar) {
+        const bool show = picked->isChecked();
+        if (m_mainToolBar) {
+            m_mainToolBar->setVisible(show);
+        }
+        return;
+    }
+
+    if (picked == toggleAlbum) {
+        const bool show = picked->isChecked();
+        m_showAlbumPanel = show;
+        if (m_albumListWidget) {
+            m_albumListWidget->setVisible(show);
+        }
+        if (m_toggleAlbumAction) {
+            m_toggleAlbumAction->setChecked(show);
+        }
+        return;
+    }
+
+    const QString currentPath = (m_currentIndex >= 0 && m_currentIndex < m_files.size())
+        ? m_files.at(m_currentIndex)
+        : QString();
+
+    bool sortChanged = false;
+    if (picked->parent() == sortMenu && picked->data().isValid()) {
+        const AlbumSortKey newKey = static_cast<AlbumSortKey>(picked->data().toInt());
+        if (newKey != m_albumSortKey) {
+            m_albumSortKey = newKey;
+            sortChanged = true;
+        }
+    }
+    if (picked == ascAction && m_albumSortOrder != Qt::AscendingOrder) {
+        m_albumSortOrder = Qt::AscendingOrder;
+        sortChanged = true;
+    }
+    if (picked == descAction && m_albumSortOrder != Qt::DescendingOrder) {
+        m_albumSortOrder = Qt::DescendingOrder;
+        sortChanged = true;
+    }
+
+    if (!sortChanged) {
+        return;
+    }
+
+    applyAlbumSort(true);
+    if (m_albumListWidget) {
+        QSignalBlocker blocker(m_albumListWidget);
+        m_albumListWidget->clear();
+        for (const QString &file : m_files) {
+            QFileInfo info(file);
+            auto *albumItem = new QListWidgetItem(buildListIcon(file), info.fileName());
+            albumItem->setToolTip(info.absoluteFilePath());
+            m_albumListWidget->addItem(albumItem);
+        }
+    }
+
+    int row = 0;
+    if (!currentPath.isEmpty()) {
+        const int idx = m_files.indexOf(currentPath);
+        if (idx >= 0) {
+            row = idx;
+        }
+    }
+    m_currentIndex = row;
+    if (m_albumListWidget) {
+        m_albumListWidget->setCurrentRow(row);
+    }
+    showCurrent();
+    statusBar()->showMessage("相册排序: " + albumSortLabel(), 2500);
+}
+
 void MainWindow::showCurrent()
 {
     if (m_currentIndex < 0 || m_currentIndex >= m_files.size()) {
@@ -456,6 +863,18 @@ void MainWindow::showCurrent()
     }
 
     const QString file = m_files.at(m_currentIndex);
+    if (isImageFile(file) || QFileInfo(file).suffix().compare("livp", Qt::CaseInsensitive) == 0) {
+        m_imageScaleMode = ImageScaleMode::FitToWindow;
+        m_zoomFactor = 1.0;
+        m_isImagePanning = false;
+        if (m_imageArea && m_imageArea->viewport()) {
+            m_imageArea->viewport()->unsetCursor();
+        }
+        if (m_imageLabel) {
+            m_imageLabel->unsetCursor();
+        }
+    }
+
     appendHistoryEntry(file);
     const ResolvedMedia media = resolveMedia(file);
     showMedia(media);
@@ -484,11 +903,12 @@ void MainWindow::rebuildHistoryList()
         return;
     }
 
-    m_updatingHistoryList = true;
-    QSignalBlocker blocker(m_listWidget);
+    m_updatingHistoryList = true;               
+    QSignalBlocker blocker(m_listWidget);       // 重建历史列表时阻止触发 selectionChanged 信号，避免界面卡顿和不必要的加载
     m_listWidget->clear();
 
-    const int groupCount = (m_historyEntries.size() + kHistoryGroupSize - 1) / kHistoryGroupSize;
+    // 将历史记录分组，每组 kHistoryGroupSize 条，生成对应的组头，默认折叠除最后一组以外的所有组
+    const int groupCount = (m_historyEntries.size() + kHistoryGroupSize - 1) / kHistoryGroupSize;  
     m_historyCollapsedGroups.clear();
     for (int group = 0; group < qMax(0, groupCount - 1); ++group) {
         m_historyCollapsedGroups.insert(group);
@@ -522,7 +942,8 @@ void MainWindow::rebuildHistoryList()
             QFileInfo info(entry.path);
             const QString title = entry.timestamp.toString("HH:mm:ss") + "  ·  " + info.fileName();
 
-            auto *item = new QListWidgetItem(buildAlbumIcon(entry.path), title);
+            // 用 buildListIcon（纯绘图，<1ms）避免在主线程做图片/视频解码
+            auto *item = new QListWidgetItem(buildListIcon(entry.path), title);
             item->setToolTip(entry.path);
             item->setData(kHistoryRolePath, entry.path);
             item->setData(kHistoryRoleIsHeader, false);
@@ -535,6 +956,7 @@ void MainWindow::rebuildHistoryList()
 
     applyHistoryGroupCollapse();
 
+    // 如果有历史记录，默认选中最后一条，并滚动到可见位置
     if (m_listWidget->count() > 0) {
         m_listWidget->scrollToBottom();
     }

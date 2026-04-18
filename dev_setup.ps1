@@ -4,7 +4,8 @@ param(
     [ValidateSet("auto", "msvc", "mingw")]
     [string]$Toolchain = "auto",
     [ValidateSet("debug", "release")]
-    [string]$Config = "debug"
+    [string]$Config = "debug",
+    [switch]$Deploy
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,3 +67,17 @@ cmake --preset $preset
 cmake --build --preset $buildPreset
 
 Write-Host "Setup done. You can now launch from VS Code launch configs."
+
+if ($Deploy) {
+    $deployScript = Join-Path $PSScriptRoot "deploy.ps1"
+    if (-not (Test-Path $deployScript)) {
+        throw "deploy.ps1 not found: $deployScript"
+    }
+
+    $deployConfig = if ($Config -eq "release") { "Release" } else { "Debug" }
+    Write-Host "Deploy switch enabled. Running deploy.ps1..."
+    & $deployScript -QtRoot $QtRoot -Toolchain $Toolchain -Config $deployConfig
+    if ($LASTEXITCODE -ne 0) {
+        throw "deploy.ps1 failed with exit code $LASTEXITCODE"
+    }
+}

@@ -4,6 +4,8 @@ cmake-build-*/
 out/
 bin/
 obj/
+dist/
+*.7z
 
 # CMake generated
 CMakeCache.txt

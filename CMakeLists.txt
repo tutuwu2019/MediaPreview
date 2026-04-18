@@ -12,7 +12,7 @@ if(NOT CMAKE_PREFIX_PATH AND DEFINED ENV{QT_ROOT})
     list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_ROOT}")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia MultimediaWidgets Concurrent)
 
 add_executable(MediaPreviewClient
     main.cpp
@@ -30,6 +30,7 @@ target_link_libraries(MediaPreviewClient PRIVATE
     Qt6::Widgets
     Qt6::Multimedia
     Qt6::MultimediaWidgets
+    Qt6::Concurrent
 )
 
 if(WIN32)

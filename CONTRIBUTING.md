@@ -37,7 +37,7 @@ cmake --build --preset build-mingw-debug
 Before opening a PR, manually verify:
 
 - Basic image/video preview works.
-- LIVP switch (`LIVP优先视频`) behavior is correct.
+- LIVP switch (`动态图优先视频`) behavior is correct.
 - Album panel scrolling and centering do not jump.
 - History browser grouping/collapse/selection works.
 - App builds with no compile errors.
