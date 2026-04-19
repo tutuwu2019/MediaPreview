@@ -83,29 +83,10 @@ jobs:
             "{0}  {1}" -f $_.Hash.ToLower(), $assetZip
           } | Set-Content "SHA256SUMS.txt" -Encoding UTF8
 
-          if (Test-Path "scripts/install-windows.ps1") {
-            Copy-Item "scripts/install-windows.ps1" "install-windows.ps1" -Force
-          } else {
-            @(
-              'param(',
-              '    [string]$Owner = "tutuwu2019",',
-              '    [string]$Repo = "MediaPreview",',
-              '    [string]$InstallDir = "$env:LOCALAPPDATA\MediaPreviewClient"',
-              ')',
-              '',
-              '$ErrorActionPreference = "Stop"',
-              '$releaseApi = "https://api.github.com/repos/$Owner/$Repo/releases/latest"',
-              '$release = Invoke-RestMethod -Uri $releaseApi -Headers @{"User-Agent" = "MediaPreviewClient-Installer"}',
-              '$zipAsset = $release.assets | Where-Object { $_.name -match ''^MediaPreviewClient-.*-windows-x64\.zip$'' } | Select-Object -First 1',
-              'if (-not $zipAsset) { throw "No installable asset found." }',
-              'if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }',
-              'New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null',
-              '$tmpZip = Join-Path $env:TEMP $zipAsset.name',
-              'Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $tmpZip',
-              'Expand-Archive -Path $tmpZip -DestinationPath $InstallDir -Force',
-              'Start-Process -FilePath (Join-Path $InstallDir "MediaPreviewClient.exe")'
-            ) | Set-Content "install-windows.ps1" -Encoding UTF8
+          if (-not (Test-Path "scripts/install-windows.ps1")) {
+            throw "Missing scripts/install-windows.ps1 in repository."
           }
+          Copy-Item "scripts/install-windows.ps1" "install-windows.ps1" -Force
 
           "zip_name=$assetZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
