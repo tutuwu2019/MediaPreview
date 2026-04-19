@@ -1,0 +1,76 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        id: install-qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.9.3"
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          tools: tools_mingw1310
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $env:QT_ROOT = "${{ steps.install-qt.outputs.qtPath }}/Qt/${{ steps.install-qt.outputs.qtVersion }}/mingw_64"
+          $env:MINGW_ROOT = "${{ steps.install-qt.outputs.qtPath }}/Tools/mingw1310_64"
+          cmake --preset mingw-release
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $env:QT_ROOT = "${{ steps.install-qt.outputs.qtPath }}/Qt/${{ steps.install-qt.outputs.qtVersion }}/mingw_64"
+          $env:MINGW_ROOT = "${{ steps.install-qt.outputs.qtPath }}/Tools/mingw1310_64"
+          cmake --build --preset build-mingw-release
+
+      - name: Deploy Qt runtime
+        shell: pwsh
+        run: |
+          $qtRoot = "${{ steps.install-qt.outputs.qtPath }}/Qt/${{ steps.install-qt.outputs.qtVersion }}/mingw_64"
+          .\deploy.ps1 -QtRoot $qtRoot -Toolchain mingw -Config Release
+
+      - name: Package artifacts
+        id: package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $assetZip = "MediaPreviewClient-$tag-windows-x64.zip"
+          if (Test-Path $assetZip) {
+            Remove-Item $assetZip -Force
+          }
+
+          Compress-Archive -Path "dist/mingw-release/*" -DestinationPath $assetZip -Force
+          Get-FileHash $assetZip -Algorithm SHA256 | ForEach-Object {
+            "{0}  {1}" -f $_.Hash.ToLower(), $assetZip
+          } | Set-Content "SHA256SUMS.txt" -Encoding UTF8
+
+          Copy-Item "scripts/install-windows.ps1" "install-windows.ps1" -Force
+
+          "zip_name=$assetZip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.package.outputs.zip_name }}
+            SHA256SUMS.txt
+            install-windows.ps1
+          generate_release_notes: true

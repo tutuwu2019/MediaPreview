@@ -81,6 +81,7 @@
 ```powershell
 cmake --preset mingw-debug
 cmake --build --preset build-mingw-debug
+```
 
 ## 发布部署（Windows）
 
@@ -97,6 +98,56 @@ cmake --build --preset build-mingw-debug
 ```
 
 详细步骤见 `DEPLOY.md`。
+
+## GitHub Release 与一键安装
+
+### 自动发布（推荐）
+
+仓库已提供 GitHub Actions 工作流：`.github/workflows/release.yml`。
+
+触发方式：
+
+1. 推送版本标签（例如 `v1.1.1`）
+2. 工作流自动执行：构建 Release、运行 `deploy.ps1`、打包 ZIP、生成 SHA256、创建 GitHub Release 并上传资产
+
+发布产物：
+
+- `MediaPreviewClient-<tag>-windows-x64.zip`
+- `SHA256SUMS.txt`
+- `install-windows.ps1`
+
+### 手动发布（本地一条命令）
+
+如果你要在本地直接发布到 GitHub：
+
+```powershell
+.\scripts\create-release.ps1 -Tag v1.1.0 -QtRoot "D:/QT/6.9.3/mingw_64"
+```
+
+前提：
+
+1. 已安装并登录 GitHub CLI（`gh auth login`）
+2. 本机可完成 Release 构建
+
+### 用户一键安装（Windows）
+
+用户可以直接运行：
+
+```powershell
+irm https://raw.githubusercontent.com/tutuwu2019/MediaPreview/main/scripts/install-windows.ps1 | iex
+```
+
+默认行为：
+
+1. 自动下载最新 Release 的 ZIP
+2. 安装到 `%LOCALAPPDATA%\MediaPreviewClient`
+3. 创建桌面快捷方式
+4. 安装完成后自动启动
+
+可选参数示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -NoDesktopShortcut -NoLaunch
 ```
 
 ### 通用 CMake
