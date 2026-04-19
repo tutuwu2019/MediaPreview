@@ -108,7 +108,8 @@ cmake --build --preset build-mingw-debug
 触发方式：
 
 1. 推送版本标签（例如 `v1.1.1`）
-2. 工作流自动执行：构建 Release、运行 `deploy.ps1`、打包 ZIP、生成 SHA256、创建 GitHub Release 并上传资产
+2. 或在 GitHub Actions 手动触发，并填写 `tag` 输入（例如 `v1.1.0`）
+3. 工作流自动执行：构建 Release、运行 `deploy.ps1`、打包 ZIP、生成 SHA256、创建 GitHub Release 并上传资产
 
 发布产物：
 

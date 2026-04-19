@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish, e.g. v1.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,8 +19,24 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      - name: Resolve release tag
+        id: release-tag
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ github.event.inputs.tag }}"
+            if ([string]::IsNullOrWhiteSpace($tag)) {
+              throw "workflow_dispatch requires input tag"
+            }
+            "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "tag=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release-tag.outputs.tag }}
 
       - name: Install Qt
         id: install-qt
@@ -51,7 +72,7 @@ jobs:
         id: package
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ steps.release-tag.outputs.tag }}"
           $assetZip = "MediaPreviewClient-$tag-windows-x64.zip"
           if (Test-Path $assetZip) {
             Remove-Item $assetZip -Force
@@ -69,6 +90,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release-tag.outputs.tag }}
           files: |
             ${{ steps.package.outputs.zip_name }}
             SHA256SUMS.txt
